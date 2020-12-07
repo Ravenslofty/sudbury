@@ -97,21 +97,21 @@ impl Cpu {
             match dest {
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("b{} <= {:016x}", index, reg);
+                    //eprintln!("b{} <= {:016x}", index, reg);
                     regs.write_br(*index as usize, reg);
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("cr{} <= {:016x}", index, reg);
+                    //eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
-                    eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
+                    //eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
                 },
                 Operand::PredicateRegister(yaxpeax_ia64::PredicateRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("p{} <= {}", index, reg == 1);
+                    //eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
                 }
                 _ => todo!("dest: {:?}", dest),
@@ -168,6 +168,19 @@ impl Cpu {
                 assert!(!nat1);
                 assert!(!nat2);
                 let eq = source1 == source2;
+                write_dest(&mut self.regs, &operands[0], eq as u64, false);
+                write_dest(&mut self.regs, &operands[1], !eq as u64, false);
+                Action::Continue
+            },
+            Opcode::Cmp_lt => {
+                assert!(pred);
+                let operands = instruction.operands();
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let eq = source1 < source2;
                 write_dest(&mut self.regs, &operands[0], eq as u64, false);
                 write_dest(&mut self.regs, &operands[1], !eq as u64, false);
                 Action::Continue
