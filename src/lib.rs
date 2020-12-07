@@ -84,6 +84,7 @@ impl Cpu {
         let read_source = |regs: &gpr::Regs, source: &Operand| -> (u64, bool) {
             match source {
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => (regs.read_br(*br as usize), false),
+                Operand::FloatRegister(yaxpeax_ia64::FloatRegister(fpr)) => (regs.read_fpr(*fpr as usize).to_bits(), false),
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(gpr)) => regs.read_gpr(*gpr as usize),
                 Operand::ImmI64(imm) => (*imm as u64, false),
                 Operand::ImmU64(imm) => (*imm, false),
@@ -96,6 +97,10 @@ impl Cpu {
 
         let write_dest = |regs: &mut gpr::Regs, dest: &Operand, reg: u64, nat: bool| {
             match dest {
+                Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(index)) => {
+                    assert!(!nat);
+                    regs.write_ar(*index as usize, reg);
+                }
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
                     //eprintln!("b{} <= {:016x}", index, reg);
@@ -106,6 +111,10 @@ impl Cpu {
                     //eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
+                Operand::FloatRegister(yaxpeax_ia64::FloatRegister(index)) => {
+                    assert!(!nat);
+                    regs.write_fpr(*index as usize, f64::from_bits(reg)).unwrap();
+                }
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
                     //eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
@@ -114,7 +123,12 @@ impl Cpu {
                     assert!(!nat);
                     //eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
-                }
+                },
+                Operand::PSR_l => {
+                    assert!(!nat);
+                    let psr = regs.read_psr() & 0xFFFF_FFFF_0000_0000;
+                    regs.write_psr(psr | (reg & 0xFFFF_FFFF));
+                },
                 _ => todo!("dest: {:?}", dest),
             }
         };
@@ -168,6 +182,11 @@ impl Cpu {
                 self.regs.bank_switch(1);
                 Action::Continue
             },
+            Opcode::Clrrb => {
+                let cfm = self.regs.read_cfm();
+                self.regs.write_cfm(cfm & !gpr::CFM_RRB_FR & !gpr::CFM_RRB_GR & !gpr::CFM_RRB_PR);
+                Action::Continue
+            },
             Opcode::Cmp_eq => {
                 assert!(pred);
                 let operands = instruction.operands();
@@ -218,8 +237,29 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], source1, nat1);
                 Action::Continue
             },
+            Opcode::Extr_u => {
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let pos = read_source(&self.regs, &operands[2]).0;
+                let len = read_source(&self.regs, &operands[3]).0;
+                let mask = (1 << (len + pos + 1)) - 1;
+                let source1 = (source1 & mask) >> pos;
+                write_dest(&mut self.regs, &operands[0], source1, nat1);
+                Action::Continue
+            },
             Opcode::Flushrs => {
                 eprintln!("flushrs stubbed");
+                Action::Continue
+            },
+            Opcode::Fmerge_s => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                assert!(!nat1 && !nat2);
+                let source1 = f64::from_bits(source1);
+                let source2 = f64::from_bits(source2);
+                write_dest(&mut self.regs, &operands[0], source2.copysign(source1).to_bits(), false);
                 Action::Continue
             },
             Opcode::Ld1 => {
@@ -267,7 +307,7 @@ impl Cpu {
                 }
                 Action::Continue
             },
-            Opcode::Mov | Opcode::Movl => {
+            Opcode::Mov | Opcode::Movl | Opcode::Mov_m => {
                 if !pred { return Action::Continue; }
                 let operands = instruction.operands();
                 assert_eq!(operands.len(), 2);

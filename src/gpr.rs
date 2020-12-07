@@ -1,3 +1,7 @@
+pub const CFM_RRB_GR: u64 = 0x7F << 18;
+pub const CFM_RRB_FR: u64 = 0x7F << 25;
+pub const CFM_RRB_PR: u64 = 0x3F << 32;
+
 pub const PSR_BN: u64 = 1 << 44;
 
 pub const CR_IPSR: usize = 16;
@@ -27,6 +31,8 @@ pub struct Regs {
     ip: u64,
     /// Application registers.
     ar: [u64; 128],
+    /// Current frame marker.
+    cfm: u64,
     /// Processor status register.
     psr: u64,
     /// Control registers.
@@ -44,13 +50,16 @@ impl Regs {
         let br = [0; 8];
         let ip = 0;
         let ar = [0; 128];
+        let cfm = 0;
         let psr = 0;
         let cr = [0; 128];
 
         // f1 is a constant 1.0.
         fpr[1] = 1.0_f64;
         
-        Self { gpr, gpr_nat, gpr_bank, gpr_bank_nat, fpr, pr, br, ip, ar, psr, cr }
+        eprintln!("Gpr size: {}", std::mem::size_of::<Self>());
+
+        Self { gpr, gpr_nat, gpr_bank, gpr_bank_nat, fpr, pr, br, ip, ar, cfm, psr, cr }
     }
 
     pub fn read_gpr(&self, index: usize) -> (u64, bool) {
@@ -122,6 +131,14 @@ impl Regs {
 
     pub fn write_ar(&mut self, index: usize, reg: u64) -> Result<(), ()> {
         Err(())
+    }
+
+    pub fn read_cfm(&self) -> u64 {
+        self.cfm
+    }
+
+    pub fn write_cfm(&mut self, reg: u64) { 
+        self.cfm = reg;
     }
 
     pub fn read_psr(&self) -> u64 {
