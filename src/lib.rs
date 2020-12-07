@@ -103,7 +103,7 @@ impl Cpu {
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("cr{} <= {:016x}", index, reg);
+                    eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
@@ -276,23 +276,34 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Nop_b | Opcode::Nop_f | Opcode::Nop_i | Opcode::Nop_m | Opcode::Nop_x => Action::Continue,
+            Opcode::Rfi => {
+                assert!(pred);
+                let ipsr = self.regs.read_cr(gpr::CR_IPSR).unwrap();
+                let iip = self.regs.read_cr(gpr::CR_IIP).unwrap();
+                self.regs.write_psr(ipsr);
+                self.regs.write_ip(iip);
+                Action::BranchTaken
+            },
+            Opcode::Rsm => {
+                assert!(pred);
+                let operands = instruction.operands();
+                let source = !(read_source(&self.regs, &operands[0]).0 & 0xFFFFFF);
+                let psr = self.regs.read_psr();
+                self.regs.write_psr(psr & source);
+                Action::Continue
+            },
             Opcode::Srlz_i | Opcode::Srlz_d => Action::Continue,
             Opcode::Tbit_z => {
+                assert!(pred);
                 let operands = instruction.operands();
-                if pred {
-                    assert_ne!(operands[0], operands[1], "Illegal Operation");
-                    let (source1, nat1) = read_source(&self.regs, &operands[2]);
-                    let (source2, nat2) = read_source(&self.regs, &operands[3]);
-                    assert!(!nat1);
-                    assert!(!nat2);
-                    let eq = (source1 >> source2) & 1 == 0;
-                    write_dest(&mut self.regs, &operands[0], eq as u64, false);
-                    write_dest(&mut self.regs, &operands[1], !eq as u64, false);
-                } else {
-                    write_dest(&mut self.regs, &operands[0], 0, false);
-                    write_dest(&mut self.regs, &operands[1], 0, false);
-                }
-
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let eq = (source1 >> source2) & 1 == 0;
+                write_dest(&mut self.regs, &operands[0], eq as u64, false);
+                write_dest(&mut self.regs, &operands[1], !eq as u64, false);
                 Action::Continue
             },
             _ => todo!("{:?} {0}", instruction),

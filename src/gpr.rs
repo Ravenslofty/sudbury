@@ -1,3 +1,6 @@
+pub const CR_IPSR: usize = 16;
+pub const CR_IIP: usize = 19;
+
 pub struct Regs {
     /// General-purpose registers.
     /// r0 reads as zero, writes trap.
@@ -108,13 +111,16 @@ impl Regs {
         self.psr
     }
 
+    pub fn write_psr(&mut self, reg: u64) {
+        self.psr = reg;
+    }
+
     pub fn read_cr(&self, index: usize) -> Result<u64, ()> {
-        // ar18 = BSPSTORE
-        Err(())
+        Ok(self.cr[index])
     }
 
     pub fn write_cr(&mut self, index: usize, reg: u64) -> Result<(), ()> {
-        assert_eq!(index, 64);
+        // assert_eq!(index, 64);
         self.cr[index] = reg;
         Ok(())
     }
