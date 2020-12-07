@@ -40,6 +40,18 @@ impl Cpu {
         }
     }
 
+    pub fn read2(&self, addr: u64) -> [u8; 2] {
+        let addr = addr & 0xFFFF_FFFF;
+        match addr {
+            // ROM
+            0xFFC0_0000 ..= 0xFFFF_FFFF => {
+                let addr = (addr - 0xFFC0_0000) as usize;
+                self.rom[addr..addr+2].try_into().unwrap()
+            },
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn read8(&self, addr: u64) -> [u8; 8] {
         let addr = addr & 0xFFFF_FFFF;
         match addr {
@@ -112,7 +124,25 @@ impl Cpu {
                 let operands = instruction.operands();
                 let (source1, nat1) = read_source(&self.regs, &operands[1]);
                 let (source2, nat2) = read_source(&self.regs, &operands[2]);
-                write_dest(&mut self.regs, &operands[0], source1 + source2, nat1 || nat2);
+                let reg = ((source1 as i64) + (source2 as i64)) as u64;
+                write_dest(&mut self.regs, &operands[0], reg, nat1 || nat2);
+                Action::Continue
+            },
+            Opcode::Adds => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                let reg = ((source1 as i64) + (source2 as i64)) as u64;
+                write_dest(&mut self.regs, &operands[0], reg, nat1 || nat2);
+                Action::Continue
+            },
+            Opcode::And => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                write_dest(&mut self.regs, &operands[0], source1 & source2, nat1 || nat2);
                 Action::Continue
             },
             Opcode::Br_cond => {
@@ -180,7 +210,23 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], data, false);
                 if operands.len() == 3 {
                     let offset = read_source(&self.regs, &operands[2]).0;
-                    write_dest(&mut self.regs, &operands[1], source + offset, false);
+                    let reg = ((source as i64) + (offset as i64)) as u64;
+                    write_dest(&mut self.regs, &operands[1], reg, false);
+                }
+                Action::Continue
+            },
+            Opcode::Ld2 => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                assert!(operands.len() == 2 || operands.len() == 3);
+                let (source, nat) = read_source(&self.regs, &operands[1]);
+                assert!(!nat, "Register NaT Consumption");
+                let data = u16::from_le_bytes(self.read2(source)) as u64;
+                write_dest(&mut self.regs, &operands[0], data, false);
+                if operands.len() == 3 {
+                    let offset = read_source(&self.regs, &operands[2]).0;
+                    let reg = ((source as i64) + (offset as i64)) as u64;
+                    write_dest(&mut self.regs, &operands[1], reg, false);
                 }
                 Action::Continue
             },
@@ -194,7 +240,8 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], data, false);
                 if operands.len() == 3 {
                     let offset = read_source(&self.regs, &operands[2]).0;
-                    write_dest(&mut self.regs, &operands[1], source + offset, false);
+                    let reg = ((source as i64) + (offset as i64)) as u64;
+                    write_dest(&mut self.regs, &operands[1], reg, false);
                 }
                 Action::Continue
             },
@@ -215,6 +262,24 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Nop_b | Opcode::Nop_f | Opcode::Nop_i | Opcode::Nop_m | Opcode::Nop_x => Action::Continue,
+            Opcode::Tbit_z => {
+                let operands = instruction.operands();
+                if pred {
+                    assert_ne!(operands[0], operands[1], "Illegal Operation");
+                    let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                    let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                    assert!(!nat1);
+                    assert!(!nat2);
+                    let eq = (source1 >> source2) & 1 == 0;
+                    write_dest(&mut self.regs, &operands[0], eq as u64, false);
+                    write_dest(&mut self.regs, &operands[1], !eq as u64, false);
+                } else {
+                    write_dest(&mut self.regs, &operands[0], 0, false);
+                    write_dest(&mut self.regs, &operands[1], 0, false);
+                }
+
+                Action::Continue
+            },
             _ => todo!("{:?} {0}", instruction),
         }
     }
