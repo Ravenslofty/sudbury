@@ -1,3 +1,5 @@
+pub const PSR_BN: u64 = 1 << 44;
+
 pub const CR_IPSR: usize = 16;
 pub const CR_IIP: usize = 19;
 
@@ -8,6 +10,10 @@ pub struct Regs {
     /// General-purpose register not-a-thing (NaT) bits.
     /// r0 is always-false since r0 the register is a constant.
     gpr_nat: [bool; 128],
+    /// Banked general-purpose registers 16-31.
+    gpr_bank: [u64; 16], 
+    /// Banked general-purpose registers 16-31 not-a-thing (NaT) bits.
+    gpr_bank_nat: [bool; 16],
     /// Floating-point registers.
     /// f0 reads as 0.0, writes trap.
     /// f1 reads as 1.0, writes trap.
@@ -31,6 +37,8 @@ impl Regs {
     pub fn new() -> Self {
         let gpr = [0_u64; 128];
         let gpr_nat = [false; 128];
+        let gpr_bank = [0_u64; 16];
+        let gpr_bank_nat = [false; 16];
         let mut fpr = [0.0_f64; 128];
         let pr = [true; 64];
         let br = [0; 8];
@@ -42,19 +50,28 @@ impl Regs {
         // f1 is a constant 1.0.
         fpr[1] = 1.0_f64;
         
-        Self { gpr, gpr_nat, fpr, pr, br, ip, ar, psr, cr }
+        Self { gpr, gpr_nat, gpr_bank, gpr_bank_nat, fpr, pr, br, ip, ar, psr, cr }
     }
 
     pub fn read_gpr(&self, index: usize) -> (u64, bool) {
-        (self.gpr[index], self.gpr_nat[index])
+        if self.psr & PSR_BN == 0 || index < 16 || index > 31 {
+            (self.gpr[index], self.gpr_nat[index])
+        } else {
+            (self.gpr_bank[index-16], self.gpr_bank_nat[index-16])
+        }
     }
 
     pub fn write_gpr(&mut self, index: usize, reg: u64, nat: bool) -> Result<(), ()> {
         if index == 0 {
             return Err(());
         }
-        self.gpr[index] = reg;
-        self.gpr_nat[index] = nat;
+        if self.psr & PSR_BN == 0 || index < 16 || index > 31 {
+            self.gpr[index] = reg;
+            self.gpr_nat[index] = nat;
+        } else {
+            self.gpr_bank[index-16] = reg;
+            self.gpr_bank_nat[index-16] = nat;
+        }
         Ok(())
     }
 
@@ -123,5 +140,11 @@ impl Regs {
         // assert_eq!(index, 64);
         self.cr[index] = reg;
         Ok(())
+    }
+
+    pub fn bank_switch(&mut self, bank: u8) {
+        assert!(bank == 0 || bank == 1);
+        self.psr &= !PSR_BN;
+        self.psr |= (bank as u64) << 44;
     }
 }

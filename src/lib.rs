@@ -103,7 +103,7 @@ impl Cpu {
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("cr{} <= {:016x}", index, reg);
+                    //eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
@@ -159,6 +159,14 @@ impl Cpu {
             Opcode::Break_m => {
                 if !pred { return Action::Continue; }
                 panic!("Break Instruction");
+            },
+            Opcode::Bsw_0 => {
+                self.regs.bank_switch(0);
+                Action::Continue
+            },
+            Opcode::Bsw_1 => {
+                self.regs.bank_switch(1);
+                Action::Continue
             },
             Opcode::Cmp_eq => {
                 assert!(pred);
