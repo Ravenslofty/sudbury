@@ -276,6 +276,7 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Nop_b | Opcode::Nop_f | Opcode::Nop_i | Opcode::Nop_m | Opcode::Nop_x => Action::Continue,
+            Opcode::Srlz_i => Action::Continue,
             Opcode::Tbit_z => {
                 let operands = instruction.operands();
                 if pred {
