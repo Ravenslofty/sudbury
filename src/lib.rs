@@ -276,7 +276,7 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Nop_b | Opcode::Nop_f | Opcode::Nop_i | Opcode::Nop_m | Opcode::Nop_x => Action::Continue,
-            Opcode::Srlz_i => Action::Continue,
+            Opcode::Srlz_i | Opcode::Srlz_d => Action::Continue,
             Opcode::Tbit_z => {
                 let operands = instruction.operands();
                 if pred {
@@ -304,7 +304,11 @@ impl Cpu {
         let bytes = self.read16(ip);
         let decoder = yaxpeax_ia64::InstDecoder::default();
         let bundle = decoder.decode(bytes.iter().copied()).unwrap();
-        println!("{:016x}: {}", ip, bundle);
+        print!("{:016x}: ", ip);
+        for byte in &bytes {
+            print!("{:02x}", byte);
+        }
+        println!(" {}", bundle);
 
         let mut branch_taken = false;
         for instruction in bundle.instructions() {
