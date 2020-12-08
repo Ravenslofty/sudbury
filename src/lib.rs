@@ -27,6 +27,15 @@ impl Cpu {
             i460gx: i460gx::I460GX::new(),
         };
         let sale_entry = u64::from_le_bytes(ia64.read8(SALE_ENTRY_PTR));
+
+        // GR20 (bank 1): SALE_ENTRY state parameter:
+        // 0 = RESET, 1 = MACHINE_CHECK, 2 = INIT, 3 = RECOVERY_CHECK
+        ia64.regs.bank_switch(1);
+        ia64.regs.write_gpr(20, 0, false).unwrap();
+
+        // CFM: all fields zero except for SOF which is 96.
+        ia64.regs.write_cfm(96);
+
         ia64.regs.write_ip(sale_entry);
         ia64
     }
@@ -135,31 +144,31 @@ impl Cpu {
             match dest {
                 Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("ar{} <= {:016x}", index, reg);
+                    eprintln!("ar{} <= {:016x}", index, reg);
                     regs.write_ar(*index as usize, reg).unwrap();
                 }
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("b{} <= {:016x}", index, reg);
+                    eprintln!("b{} <= {:016x}", index, reg);
                     regs.write_br(*index as usize, reg);
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("cr{} <= {:016x}", index, reg);
+                    eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::FloatRegister(yaxpeax_ia64::FloatRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("f{} <= {:016x}", index, reg);
+                    eprintln!("f{} <= {:016x}", index, reg);
                     regs.write_fpr(*index as usize, f64::from_bits(reg)).unwrap();
                 }
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
-                    //eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
+                    eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
                 },
                 Operand::PredicateRegister(yaxpeax_ia64::PredicateRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("p{} <= {}", index, reg == 1);
+                    eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
                 },
                 Operand::PSR_l => {
@@ -213,9 +222,8 @@ impl Cpu {
             },
             Opcode::Br_call => {
                 if !pred { return Action::Continue; }
-                let target = match instruction.operands()[0] {
+                let target = match instruction.operands()[1] {
                     Operand::ImmI64(imm) => ((self.regs.read_ip() as i64) + imm) as u64,
-                    Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => self.regs.read_br(br as usize),
                     _ => todo!("br_call source: {:?}", instruction.operands()[0]),
                 };
                 let cfm = self.regs.read_cfm();
@@ -224,8 +232,9 @@ impl Cpu {
                 let pfs = cfm | ec << 52 | cpl << 62;
                 let sof = cfm & gpr::CFM_SOF;
                 let sol = (cfm & gpr::CFM_SOL) >> 7;
+                let ip = self.regs.read_ip();
                 self.regs.write_ar(gpr::AR_PFS, pfs).unwrap();
-                self.regs.write_br(1, self.regs.read_ip() + 16);
+                write_dest(&mut self.regs, &instruction.operands()[0], ip + 16, false);
                 self.regs.write_cfm(sof - sol);
                 self.regs.write_ip(target);
                 Action::BranchTaken
@@ -424,6 +433,14 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Nop_b | Opcode::Nop_f | Opcode::Nop_i | Opcode::Nop_m | Opcode::Nop_x => Action::Continue,
+            Opcode::Or => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                write_dest(&mut self.regs, &operands[0], source1 | source2, nat1 || nat2);
+                Action::Continue
+            },
             Opcode::Rfi => {
                 assert!(pred);
                 let ipsr = self.regs.read_cr(gpr::CR_IPSR).unwrap();
