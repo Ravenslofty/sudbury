@@ -1,4 +1,5 @@
 mod gpr;
+mod i460gx;
 
 use std::convert::TryInto;
 use yaxpeax_arch::Decoder;
@@ -12,6 +13,7 @@ pub enum Action {
 pub struct Cpu {
     regs: gpr::Regs,
     rom: Vec<u8>,
+    i460gx: i460gx::I460GX,
 }
 
 impl Cpu {
@@ -21,7 +23,8 @@ impl Cpu {
         const SALE_ENTRY_PTR: u64 = 0xFFFF_FFE8;
         let mut ia64 = Self {
             regs: gpr::Regs::new(),
-            rom
+            rom,
+            i460gx: i460gx::I460GX::new(),
         };
         let sale_entry = u64::from_le_bytes(ia64.read8(SALE_ENTRY_PTR));
         ia64.regs.write_ip(sale_entry);
@@ -36,7 +39,7 @@ impl Cpu {
                 let addr = (addr - 0xFFC0_0000) as usize;
                 self.rom[addr]
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("unrecognised read1 from 0x{:016x}", addr),
         }
     }
 
@@ -48,8 +51,24 @@ impl Cpu {
                 let addr = (addr - 0xFFC0_0000) as usize;
                 self.rom[addr..addr+2].try_into().unwrap()
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("unrecognised read2 from 0x{:016x}", addr),
         }
+    }
+
+    pub fn read4(&self, addr: u64) -> [u8; 4] {
+        let addr = addr & 0xFFFF_FFFF;
+        match addr {
+            // 460GX SAC undocumented register
+            0xFEB0_0CB0 => {
+                self.i460gx.read_sac_feb00cb0().to_le_bytes()
+            },
+            // ROM
+            0xFFC0_0000 ..= 0xFFFF_FFFF => {
+                let addr = (addr - 0xFFC0_0000) as usize;
+                self.rom[addr..addr+4].try_into().unwrap()
+            },
+            _ => unimplemented!("unrecognised read4 from 0x{:016x}", addr),
+        } 
     }
 
     pub fn read8(&self, addr: u64) -> [u8; 8] {
@@ -60,7 +79,7 @@ impl Cpu {
                 let addr = (addr - 0xFFC0_0000) as usize;
                 self.rom[addr..addr+8].try_into().unwrap()
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("unrecognised read8 from 0x{:016x}", addr),
         }
     }
 
@@ -72,7 +91,7 @@ impl Cpu {
                 let addr = (addr - 0xFFC0_0000) as usize;
                 self.rom[addr..addr+16].try_into().unwrap()
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("unrecognised read16 from 0x{:016x}", addr),
         }
     }
 
@@ -320,6 +339,21 @@ impl Cpu {
                 assert!(!nat, "Register NaT Consumption");
                 let data = u16::from_le_bytes(self.read2(source)) as u64;
                 write_dest(&mut self.regs, &operands[0], data, false);
+                if operands.len() == 3 {
+                    let offset = read_source(&self.regs, &operands[2]).0;
+                    let reg = ((source as i64) + (offset as i64)) as u64;
+                    write_dest(&mut self.regs, &operands[1], reg, false);
+                }
+                Action::Continue
+            },
+            Opcode::Ld4_acq => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                assert!(operands.len() == 2 || operands.len() == 3);
+                let (source, nat) = read_source(&self.regs, &operands[1]);
+                assert!(!nat, "Register NaT Consumption");
+                let data = u32::from_le_bytes(self.read4(source));
+                write_dest(&mut self.regs, &operands[0], data.into(), false);
                 if operands.len() == 3 {
                     let offset = read_source(&self.regs, &operands[2]).0;
                     let reg = ((source as i64) + (offset as i64)) as u64;
