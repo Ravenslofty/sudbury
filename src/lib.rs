@@ -117,6 +117,7 @@ impl Cpu {
 
         let read_source = |regs: &gpr::Regs, source: &Operand| -> (u64, bool) {
             match source {
+                Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(ar)) => (regs.read_ar(*ar as usize).unwrap(), false),
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => (regs.read_br(*br as usize), false),
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(cr)) => (regs.read_cr(*cr as usize).unwrap(), false),
                 Operand::FloatRegister(yaxpeax_ia64::FloatRegister(fpr)) => (regs.read_fpr(*fpr as usize).to_bits(), false),
@@ -134,31 +135,31 @@ impl Cpu {
             match dest {
                 Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("ar{} <= {:016x}", index, reg);
+                    //eprintln!("ar{} <= {:016x}", index, reg);
                     regs.write_ar(*index as usize, reg).unwrap();
                 }
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("b{} <= {:016x}", index, reg);
+                    //eprintln!("b{} <= {:016x}", index, reg);
                     regs.write_br(*index as usize, reg);
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("cr{} <= {:016x}", index, reg);
+                    //eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::FloatRegister(yaxpeax_ia64::FloatRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("f{} <= {:016x}", index, reg);
+                    //eprintln!("f{} <= {:016x}", index, reg);
                     regs.write_fpr(*index as usize, f64::from_bits(reg)).unwrap();
                 }
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
-                    eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
+                    //eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
                 },
                 Operand::PredicateRegister(yaxpeax_ia64::PredicateRegister(index)) => {
                     assert!(!nat);
-                    eprintln!("p{} <= {}", index, reg == 1);
+                    //eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
                 },
                 Operand::PSR_l => {
@@ -187,6 +188,19 @@ impl Cpu {
                 let (source2, nat2) = read_source(&self.regs, &operands[2]);
                 let reg = ((source1 as i64) + (source2 as i64)) as u64;
                 write_dest(&mut self.regs, &operands[0], reg, nat1 || nat2);
+                Action::Continue
+            },
+            Opcode::Alloc => {
+                assert_eq!(instruction.predicate(), 0, "Illegal Operation: predicated alloc");
+                let operands = instruction.operands();
+                let pfs = read_source(&self.regs, &operands[1]).0;
+                let sof = read_source(&self.regs, &operands[2]).0;
+                let sol = read_source(&self.regs, &operands[3]).0;
+                let sor = read_source(&self.regs, &operands[4]).0;
+                let cfm = self.regs.read_cfm();
+                assert!(sor == (cfm & gpr::CFM_SOR) >> 14 || cfm & gpr::CFM_RRB == 0);
+                write_dest(&mut self.regs, &operands[0], pfs, false);
+                self.regs.write_cfm(sof | sol << 7 | sor << 14 | (cfm & gpr::CFM_RRB));
                 Action::Continue
             },
             Opcode::And => {
