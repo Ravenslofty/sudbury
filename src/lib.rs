@@ -84,6 +84,7 @@ impl Cpu {
         let read_source = |regs: &gpr::Regs, source: &Operand| -> (u64, bool) {
             match source {
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => (regs.read_br(*br as usize), false),
+                Operand::ControlRegister(yaxpeax_ia64::ControlRegister(cr)) => (regs.read_cr(*cr as usize).unwrap(), false),
                 Operand::FloatRegister(yaxpeax_ia64::FloatRegister(fpr)) => (regs.read_fpr(*fpr as usize).to_bits(), false),
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(gpr)) => regs.read_gpr(*gpr as usize),
                 Operand::ImmI64(imm) => (*imm as u64, false),
@@ -99,29 +100,31 @@ impl Cpu {
             match dest {
                 Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(index)) => {
                     assert!(!nat);
+                    eprintln!("ar{} <= {:016x}", index, reg);
                     regs.write_ar(*index as usize, reg).unwrap();
                 }
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("b{} <= {:016x}", index, reg);
+                    eprintln!("b{} <= {:016x}", index, reg);
                     regs.write_br(*index as usize, reg);
                 },
                 Operand::ControlRegister(yaxpeax_ia64::ControlRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("cr{} <= {:016x}", index, reg);
+                    eprintln!("cr{} <= {:016x}", index, reg);
                     regs.write_cr(*index as usize, reg).unwrap();
                 },
                 Operand::FloatRegister(yaxpeax_ia64::FloatRegister(index)) => {
                     assert!(!nat);
+                    eprintln!("f{} <= {:016x}", index, reg);
                     regs.write_fpr(*index as usize, f64::from_bits(reg)).unwrap();
                 }
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
-                    //eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
+                    eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
                 },
                 Operand::PredicateRegister(yaxpeax_ia64::PredicateRegister(index)) => {
                     assert!(!nat);
-                    //eprintln!("p{} <= {}", index, reg == 1);
+                    eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
                 },
                 Operand::PSR_l => {
@@ -256,12 +259,25 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], source1, nat1);
                 Action::Continue
             },
+            Opcode::Extr => {
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                assert!(!nat1);
+                let source1 = source1 as i64;
+                let pos = read_source(&self.regs, &operands[2]).0 as u32;
+                let len = read_source(&self.regs, &operands[3]).0 as u32;
+                let mask = (1_i64.wrapping_shl(len + pos + 1)) - 1;
+                let source1 = (source1 & mask) >> pos;
+                write_dest(&mut self.regs, &operands[0], source1 as u64, nat1);
+                Action::Continue
+            },
             Opcode::Extr_u => {
                 let operands = instruction.operands();
                 let (source1, nat1) = read_source(&self.regs, &operands[1]);
-                let pos = read_source(&self.regs, &operands[2]).0;
-                let len = read_source(&self.regs, &operands[3]).0;
-                let mask = (1 << (len + pos + 1)) - 1;
+                assert!(!nat1);
+                let pos = read_source(&self.regs, &operands[2]).0 as u32;
+                let len = read_source(&self.regs, &operands[3]).0 as u32;
+                let mask = (1_u64.wrapping_shl(len + pos + 1)) - 1;
                 let source1 = (source1 & mask) >> pos;
                 write_dest(&mut self.regs, &operands[0], source1, nat1);
                 Action::Continue
@@ -393,6 +409,7 @@ impl Cpu {
             match self.step_instruction(instruction) {
                 Action::Continue => {},
                 Action::BranchTaken => {
+                    eprintln!("*** BRANCH ***");
                     branch_taken = true;
                     break;
                 }
