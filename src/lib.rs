@@ -71,6 +71,17 @@ impl Cpu {
         } 
     }
 
+    pub fn write4(&mut self, addr: u64, data: u32) {
+        let addr = addr & 0xFFFF_FFFF;
+        match addr {
+            // 460GX SAC undocumented register
+            0xFEB0_0CB0 => {
+                self.i460gx.write_sac_feb00cb0(data);
+            },
+            _ => unimplemented!("unrecognised write4 to 0x{:016x}", addr),
+        }
+    }
+
     pub fn read8(&self, addr: u64) -> [u8; 8] {
         let addr = addr & 0xFFFF_FFFF;
         match addr {
@@ -410,6 +421,16 @@ impl Cpu {
                 self.regs.write_psr(psr & source);
                 Action::Continue
             },
+            Opcode::St4_rel => {
+                assert!(pred);
+                let operands = instruction.operands();
+                assert_eq!(operands.len(), 2);
+                let (addr, nat1) = read_source(&self.regs, &operands[0]);
+                let (data, nat2) = read_source(&self.regs, &operands[1]);
+                assert!(!nat1 && !nat2);
+                self.write4(addr, data as u32);
+                Action::Continue
+            }
             Opcode::Srlz_i | Opcode::Srlz_d => Action::Continue,
             Opcode::Tbit_z => {
                 assert!(pred);
