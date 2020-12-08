@@ -99,7 +99,7 @@ impl Cpu {
             match dest {
                 Operand::ApplicationRegister(yaxpeax_ia64::ApplicationRegister(index)) => {
                     assert!(!nat);
-                    regs.write_ar(*index as usize, reg);
+                    regs.write_ar(*index as usize, reg).unwrap();
                 }
                 Operand::BranchRegister(yaxpeax_ia64::BranchRegister(index)) => {
                     assert!(!nat);
@@ -160,14 +160,33 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], source1 & source2, nat1 || nat2);
                 Action::Continue
             },
+            Opcode::Br_call => {
+                if !pred { return Action::Continue; }
+                let target = match instruction.operands()[0] {
+                    Operand::ImmI64(imm) => ((self.regs.read_ip() as i64) + imm) as u64,
+                    Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => self.regs.read_br(br as usize),
+                    _ => todo!("br_call source: {:?}", instruction.operands()[0]),
+                };
+                let cfm = self.regs.read_cfm();
+                let ec = self.regs.read_ar(gpr::AR_EC).unwrap() & 0x3F;
+                let cpl = (self.regs.read_psr() & gpr::PSR_CPL) >> 32;
+                let pfs = cfm | ec << 52 | cpl << 62;
+                let sof = cfm & gpr::CFM_SOF;
+                let sol = (cfm & gpr::CFM_SOL) >> 7;
+                self.regs.write_ar(gpr::AR_PFS, pfs).unwrap();
+                self.regs.write_br(1, self.regs.read_ip() + 16);
+                self.regs.write_cfm(sof - sol);
+                self.regs.write_ip(target);
+                Action::BranchTaken
+            }
             Opcode::Br_cond => {
                 if !pred { return Action::Continue; }
-                let ip = match instruction.operands()[0] {
+                let target = match instruction.operands()[0] {
                     Operand::ImmI64(imm) => ((self.regs.read_ip() as i64) + imm) as u64,
                     Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => self.regs.read_br(br as usize),
                     _ => todo!("br_cond source: {:?}", instruction.operands()[0]),
                 };
-                self.regs.write_ip(ip);
+                self.regs.write_ip(target);
                 Action::BranchTaken
             },
             Opcode::Break_m => {

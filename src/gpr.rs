@@ -1,7 +1,14 @@
+pub const AR_PFS: usize = 64;
+pub const AR_EC: usize = 66;
+
+pub const CFM_SOF: u64 = 0x7F;
+pub const CFM_SOL: u64 = 0x7F << 7;
+pub const CFM_SOR: u64 = 0xF << 14;
 pub const CFM_RRB_GR: u64 = 0x7F << 18;
 pub const CFM_RRB_FR: u64 = 0x7F << 25;
 pub const CFM_RRB_PR: u64 = 0x3F << 32;
 
+pub const PSR_CPL: u64 = 3 << 32;
 pub const PSR_BN: u64 = 1 << 44;
 
 pub const CR_IPSR: usize = 16;
@@ -126,11 +133,12 @@ impl Regs {
 
     pub fn read_ar(&self, index: usize) -> Result<u64, ()> {
         // ar18 = BSPSTORE
-        Err(())
+        Ok(self.ar[index])
     }
 
     pub fn write_ar(&mut self, index: usize, reg: u64) -> Result<(), ()> {
-        Err(())
+        self.ar[index] = reg;
+        Ok(())
     }
 
     pub fn read_cfm(&self) -> u64 {
