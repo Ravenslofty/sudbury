@@ -62,6 +62,10 @@ impl Cpu {
             0xFEB0_0CB0 => {
                 self.i460gx.read_sac_feb00cb0().to_le_bytes()
             },
+            // 460GX BSP selector
+            0xFEB0_0CC0 => {
+                self.i460gx.read_bsp_select().to_le_bytes()
+            },
             // ROM
             0xFFC0_0000 ..= 0xFFFF_FFFF => {
                 let addr = (addr - 0xFFC0_0000) as usize;
@@ -219,6 +223,7 @@ impl Cpu {
                     Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => self.regs.read_br(br as usize),
                     _ => todo!("br_cond source: {:?}", instruction.operands()[0]),
                 };
+                assert_ne!(self.regs.read_ip(), target, "possible infinite loop?");
                 self.regs.write_ip(target);
                 Action::BranchTaken
             },
