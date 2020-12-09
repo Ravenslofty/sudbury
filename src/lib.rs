@@ -135,6 +135,7 @@ impl Cpu {
                 Operand::ImmU64(imm) => (*imm, false),
                 Operand::IP => (regs.read_ip(), false),
                 Operand::Memory(yaxpeax_ia64::GPRegister(gpr)) => regs.read_gpr(*gpr as usize),
+                Operand::PR => (regs.read_all_pr(), false),
                 Operand::PSR => (regs.read_psr(), false),
                 _ => todo!("source: {:?}", source),
             }

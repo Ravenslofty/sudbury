@@ -108,6 +108,14 @@ impl Regs {
         self.pr[index]
     }
 
+    pub fn read_all_pr(&self) -> u64 {
+        let mut x = 0_u64;
+        for pr in &self.pr {
+            x = (x << 1) | (*pr as u64);
+        }
+        x
+    }
+
     pub fn write_pr(&mut self, index: usize, reg: bool) {
         if index == 0 {
             return;
