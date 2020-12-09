@@ -421,7 +421,7 @@ impl Cpu {
                 Action::Continue
             },
             Opcode::Mf_a => Action::Continue,
-            Opcode::Mov | Opcode::Movl | Opcode::Mov_m => {
+            Opcode::Mov | Opcode::Movl | Opcode::Mov_i | Opcode::Mov_m => {
                 if !pred { return Action::Continue; }
                 let operands = instruction.operands();
                 let (source, nat) = match operands.len() {
