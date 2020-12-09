@@ -172,6 +172,10 @@ impl Cpu {
                     eprintln!("p{} <= {}", index, reg == 1);
                     regs.write_pr(*index as usize, reg == 1);
                 },
+                Operand::PR => {
+                    assert!(!nat);
+                    regs.write_all_pr(reg);
+                },
                 Operand::PSR_l => {
                     assert!(!nat);
                     let psr = regs.read_psr() & 0xFFFF_FFFF_0000_0000;
@@ -420,8 +424,17 @@ impl Cpu {
             Opcode::Mov | Opcode::Movl | Opcode::Mov_m => {
                 if !pred { return Action::Continue; }
                 let operands = instruction.operands();
-                assert_eq!(operands.len(), 2);
-                let (source, nat) = read_source(&self.regs, &operands[1]);
+                let (source, nat) = match operands.len() {
+                    2 => read_source(&self.regs, &operands[1]),
+                    3 => {
+                        assert!(matches!(operands[0], Operand::PR));
+                        let (source, nat) = read_source(&self.regs, &operands[1]);
+                        let mask = read_source(&self.regs, &operands[2]).0;
+                        let pr = self.regs.read_all_pr();
+                        ((pr & !mask) | (source & mask), nat)
+                    },
+                    _ => unimplemented!(),
+                };
                 write_dest(&mut self.regs, &operands[0], source, nat);
                 Action::Continue
             },

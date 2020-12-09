@@ -116,6 +116,12 @@ impl Regs {
         x
     }
 
+    pub fn write_all_pr(&mut self, reg: u64) {
+        for bit in 0_usize..=63 {
+            self.pr[bit] = (reg & (1 << bit)) != 0;
+        }
+    }
+
     pub fn write_pr(&mut self, index: usize, reg: bool) {
         if index == 0 {
             return;
