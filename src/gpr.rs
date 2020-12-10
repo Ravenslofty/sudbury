@@ -1,6 +1,10 @@
 pub const AR_PFS: usize = 64;
 pub const AR_EC: usize = 66;
 
+pub const AR_PFS_PFM: u64 = 0x3FFFFFFFFF;
+pub const AR_PFS_PEC: u64 = 0x3F << 52;
+pub const AR_PFS_PPL: u64 = 0x3 << 62;
+
 pub const CFM_SOF: u64 = 0x7F;
 pub const CFM_SOL: u64 = 0x7F << 7;
 pub const CFM_SOR: u64 = 0xF << 14;

@@ -20,23 +20,26 @@ impl Cpu {
     pub fn new(rom: Vec<u8>) -> Self {
         assert_eq!(rom.len(), 4 * 1024 * 1024);
 
-        const SALE_ENTRY_PTR: u64 = 0xFFFF_FFE8;
+        //const SALE_ENTRY_PTR: u64 = 0xFFFF_FFE8;
         let mut ia64 = Self {
             regs: gpr::Regs::new(),
             rom,
             i460gx: i460gx::I460GX::new(),
         };
-        let sale_entry = u64::from_le_bytes(ia64.read8(SALE_ENTRY_PTR));
+        /*let sale_entry = u64::from_le_bytes(ia64.read8(SALE_ENTRY_PTR));
 
         // GR20 (bank 1): SALE_ENTRY state parameter:
         // 0 = RESET, 1 = MACHINE_CHECK, 2 = INIT, 3 = RECOVERY_CHECK
         ia64.regs.bank_switch(1);
-        ia64.regs.write_gpr(20, 0, false).unwrap();
+        ia64.regs.write_gpr(20, 3, false).unwrap();
 
         // CFM: all fields zero except for SOF which is 96.
-        ia64.regs.write_cfm(96);
+        ia64.regs.write_cfm(96);*/
 
-        ia64.regs.write_ip(sale_entry);
+        //ia64.regs.write_ip(sale_entry);
+
+        // Seems like this is the boot vector?
+        ia64.regs.write_ip(0xFFFF_FF80);
         ia64
     }
 
@@ -243,7 +246,7 @@ impl Cpu {
                 self.regs.write_cfm(sof - sol);
                 self.regs.write_ip(target);
                 Action::BranchTaken
-            }
+            },
             Opcode::Br_cond => {
                 if !pred { return Action::Continue; }
                 let target = match instruction.operands()[0] {
@@ -253,6 +256,23 @@ impl Cpu {
                 };
                 assert_ne!(self.regs.read_ip(), target, "possible infinite loop?");
                 self.regs.write_ip(target);
+                Action::BranchTaken
+            },
+            Opcode::Br_ret => {
+                if !pred { return Action::Continue; }
+                let target = match instruction.operands()[0] {
+                    Operand::BranchRegister(yaxpeax_ia64::BranchRegister(br)) => self.regs.read_br(br as usize),
+                    _ => todo!("br_ret source: {:?}", instruction.operands()[1]),
+                };
+                let pfs = self.regs.read_ar(gpr::AR_PFS).unwrap();
+                let cfm = pfs & gpr::AR_PFS_PFM;
+                let ec = (pfs & gpr::AR_PFS_PEC) >> 52;
+                let cpl = pfs & gpr::AR_PFS_PPL;
+                let psr = (self.regs.read_psr() & !gpr::PSR_CPL) | cpl;
+                self.regs.write_ar(gpr::AR_EC, ec).unwrap();
+                self.regs.write_cfm(cfm);
+                self.regs.write_ip(target);
+                self.regs.write_psr(psr);
                 Action::BranchTaken
             },
             Opcode::Break_m => {
