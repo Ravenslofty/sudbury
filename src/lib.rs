@@ -38,7 +38,12 @@ impl Cpu {
 
         //ia64.regs.write_ip(sale_entry);
 
-        // Seems like this is the boot vector?
+        // So, there are four entry points defined by the Itanium architecture:
+        // PALE_RESET: the boot vector
+        // PALE_CHECK: for machine check events
+        // PALE_INIT: for initialisation events
+        // PALE_PMI: for performance monitor events
+        // These appear to be 0xFFFF_FF80 to 0xFFFF_FFB0, but which is which? What order are they in?
         ia64.regs.write_ip(0xFFFF_FF80);
         ia64
     }
@@ -189,16 +194,7 @@ impl Cpu {
         };
 
         match instruction.opcode() {
-            Opcode::Addl => {
-                if !pred { return Action::Continue; }
-                let operands = instruction.operands();
-                let (source1, nat1) = read_source(&self.regs, &operands[1]);
-                let (source2, nat2) = read_source(&self.regs, &operands[2]);
-                let reg = ((source1 as i64) + (source2 as i64)) as u64;
-                write_dest(&mut self.regs, &operands[0], reg, nat1 || nat2);
-                Action::Continue
-            },
-            Opcode::Adds => {
+            Opcode::Add | Opcode::Adds | Opcode::Addl => {
                 if !pred { return Action::Continue; }
                 let operands = instruction.operands();
                 let (source1, nat1) = read_source(&self.regs, &operands[1]);
@@ -305,6 +301,21 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[1], !eq as u64, false);
                 Action::Continue
             },
+            Opcode::Cmp_eq_or_andcm => {
+                assert!(pred);
+                let operands = instruction.operands();
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let eq = source1 == source2;
+                if eq {
+                    write_dest(&mut self.regs, &operands[0], 1, false);
+                    write_dest(&mut self.regs, &operands[1], 0, false);
+                }
+                Action::Continue
+            },
             Opcode::Cmp_lt => {
                 assert!(pred);
                 let operands = instruction.operands();
@@ -313,9 +324,39 @@ impl Cpu {
                 let (source2, nat2) = read_source(&self.regs, &operands[3]);
                 assert!(!nat1);
                 assert!(!nat2);
-                let eq = source1 < source2;
-                write_dest(&mut self.regs, &operands[0], eq as u64, false);
-                write_dest(&mut self.regs, &operands[1], !eq as u64, false);
+                let lt = source1 < source2;
+                write_dest(&mut self.regs, &operands[0], lt as u64, false);
+                write_dest(&mut self.regs, &operands[1], !lt as u64, false);
+                Action::Continue
+            },
+            Opcode::Cmp_ne_and => {
+                assert!(pred);
+                let operands = instruction.operands();
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let ne = source1 != source2;
+                if !ne {
+                    write_dest(&mut self.regs, &operands[0], 0, false);
+                    write_dest(&mut self.regs, &operands[1], 0, false);
+                }
+                Action::Continue
+            },
+            Opcode::Cmp_ne_or => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let ne = source1 != source2;
+                if ne {
+                    write_dest(&mut self.regs, &operands[0], 1, false);
+                    write_dest(&mut self.regs, &operands[1], 1, false);
+                }
                 Action::Continue
             },
             Opcode::Dep => {
@@ -500,7 +541,15 @@ impl Cpu {
                 assert!(!nat1 && !nat2);
                 self.write4(addr, data as u32);
                 Action::Continue
-            }
+            },
+            Opcode::Sub => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                write_dest(&mut self.regs, &operands[0], source1 - source2, nat1 || nat2);
+                Action::Continue
+            },
             Opcode::Srlz_i | Opcode::Srlz_d => Action::Continue,
             Opcode::Tbit_z => {
                 assert!(pred);
