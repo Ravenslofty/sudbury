@@ -1,4 +1,5 @@
 pub const AR_PFS: usize = 64;
+pub const AR_LC: usize = 65;
 pub const AR_EC: usize = 66;
 
 pub const AR_PFS_PFM: u64 = 0x3FFFFFFFFF;
@@ -49,6 +50,10 @@ pub struct Regs {
     psr: u64,
     /// Control registers.
     cr: [u64; 128],
+    /// CPU identification registers.
+    cpuid: [u64; 5],
+    /// Machine-specific registers. Yep.
+    msr: [u64; 4096],
 }
 
 impl Regs {
@@ -65,13 +70,18 @@ impl Regs {
         let cfm = 0;
         let psr = 0;
         let cr = [0; 128];
+        let mut cpuid = [0; 5];
+        let msr = [0; 4096];
 
         // f1 is a constant 1.0.
         fpr[1] = 1.0_f64;
+
+        cpuid[0] = u64::from_le_bytes([b'S', b'u', b'd', b'b', b'u', b'r', b'y', 0]);
+        cpuid[3] = 4;
         
         eprintln!("Gpr size: {}", std::mem::size_of::<Self>());
 
-        Self { gpr, gpr_nat, gpr_bank, gpr_bank_nat, fpr, pr, br, ip, ar, cfm, psr, cr }
+        Self { gpr, gpr_nat, gpr_bank, gpr_bank_nat, fpr, pr, br, ip, ar, cfm, psr, cr, cpuid, msr }
     }
 
     pub fn read_gpr(&self, index: usize) -> (u64, bool) {
@@ -184,6 +194,26 @@ impl Regs {
         // assert_eq!(index, 64);
         self.cr[index] = reg;
         Ok(())
+    }
+
+    pub fn read_cpuid(&self, index: usize) -> u64 {
+        self.cpuid[index]
+    }
+
+    pub fn read_msr(&self, index: usize) -> u64 {
+        match index {
+            0x5dd | 0x600 | 0x602 | 0x60e | 0x615 => self.msr[index],
+            // <the6p4c> msr 0x612, bit 6: "make machine work bit. set to 1 to make machine work"
+            0x612 => self.msr[index] | (1 << 6),
+            _ => unimplemented!("read from msr {:03x}", index),
+        }
+    }
+
+    pub fn write_msr(&mut self, index: usize, reg: u64) {
+        match index {
+            0x020 | 0x042 | 0x0e3 | 0x181 | 0x1e8 | 0x1e9 | 0x450 | 0x4c4 | 0x5dd | 0x600 | 0x601 | 0x602 | 0x60d | 0x612 | 0x615 => self.msr[index] = reg,
+            _ => unimplemented!("write to msr {:03x}", index),
+        }
     }
 
     pub fn bank_switch(&mut self, bank: u8) {

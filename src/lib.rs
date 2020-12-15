@@ -44,7 +44,7 @@ impl Cpu {
         // PALE_INIT: for initialisation events
         // PALE_PMI: for performance monitor events
         // These appear to be 0xFFFF_FF80 to 0xFFFF_FFB0, but which is which? What order are they in?
-        ia64.regs.write_ip(0xFFFF_FF80);
+        ia64.regs.write_ip(0xFFFF_FFB0);
         ia64
     }
 
@@ -141,6 +141,8 @@ impl Cpu {
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(gpr)) => regs.read_gpr(*gpr as usize),
                 Operand::ImmI64(imm) => (*imm as u64, false),
                 Operand::ImmU64(imm) => (*imm, false),
+                Operand::Indirection(yaxpeax_ia64::IndirectionReg::Cpuid, yaxpeax_ia64::GPRegister(gpr)) => (regs.read_cpuid(regs.read_gpr(*gpr as usize).0 as usize), false),
+                Operand::Indirection(yaxpeax_ia64::IndirectionReg::Msr, yaxpeax_ia64::GPRegister(gpr)) => (regs.read_msr(regs.read_gpr(*gpr as usize).0 as usize), false),
                 Operand::IP => (regs.read_ip(), false),
                 Operand::Memory(yaxpeax_ia64::GPRegister(gpr)) => regs.read_gpr(*gpr as usize),
                 Operand::PR => (regs.read_all_pr(), false),
@@ -174,6 +176,9 @@ impl Cpu {
                 Operand::GPRegister(yaxpeax_ia64::GPRegister(index)) | Operand::Memory(yaxpeax_ia64::GPRegister(index)) => {
                     eprintln!("r{} <= {:016x} {}", index, reg, if nat { "(NaT)" } else { "" });
                     regs.write_gpr(*index as usize, reg, nat).unwrap();
+                },
+                Operand::Indirection(yaxpeax_ia64::IndirectionReg::Msr, yaxpeax_ia64::GPRegister(index)) => {
+                    regs.write_msr(regs.read_gpr(*index as usize).0 as usize, reg);
                 },
                 Operand::PredicateRegister(yaxpeax_ia64::PredicateRegister(index)) => {
                     assert!(!nat);
@@ -254,6 +259,21 @@ impl Cpu {
                 self.regs.write_ip(target);
                 Action::BranchTaken
             },
+            Opcode::Br_cloop => {
+                assert!(pred);
+                let target = match instruction.operands()[0] {
+                    Operand::ImmI64(imm) => ((self.regs.read_ip() as i64) + imm) as u64,
+                    _ => todo!("br_cond source: {:?}", instruction.operands()[0]),
+                };
+                let lc = self.regs.read_ar(gpr::AR_LC).unwrap();
+                if lc > 0 {
+                    self.regs.write_ar(gpr::AR_LC, lc - 1).unwrap();
+                    self.regs.write_ip(target);
+                    Action::BranchTaken
+                } else {
+                    Action::Continue
+                }
+            },
             Opcode::Br_ret => {
                 if !pred { return Action::Continue; }
                 let target = match instruction.operands()[0] {
@@ -314,6 +334,21 @@ impl Cpu {
                     write_dest(&mut self.regs, &operands[0], 1, false);
                     write_dest(&mut self.regs, &operands[1], 0, false);
                 }
+                Action::Continue
+            },
+            Opcode::Cmp_eq_unc => {
+                let operands = instruction.operands();
+                assert_ne!(operands[0], operands[1], "Illegal Operation");
+                write_dest(&mut self.regs, &operands[0], 0, false);
+                write_dest(&mut self.regs, &operands[1], 0, false);
+                if !pred { return Action::Continue; }
+                let (source1, nat1) = read_source(&self.regs, &operands[2]);
+                let (source2, nat2) = read_source(&self.regs, &operands[3]);
+                assert!(!nat1);
+                assert!(!nat2);
+                let eq = source1 == source2;
+                write_dest(&mut self.regs, &operands[0], eq as u64, false);
+                write_dest(&mut self.regs, &operands[1], !eq as u64, false);
                 Action::Continue
             },
             Opcode::Cmp_lt => {
@@ -550,7 +585,15 @@ impl Cpu {
                 write_dest(&mut self.regs, &operands[0], source1 - source2, nat1 || nat2);
                 Action::Continue
             },
-            Opcode::Srlz_i | Opcode::Srlz_d => Action::Continue,
+            Opcode::SubMinusOne => {
+                if !pred { return Action::Continue; }
+                let operands = instruction.operands();
+                let (source1, nat1) = read_source(&self.regs, &operands[1]);
+                let (source2, nat2) = read_source(&self.regs, &operands[2]);
+                write_dest(&mut self.regs, &operands[0], source1 - source2 - 1, nat1 || nat2);
+                Action::Continue
+            },
+            Opcode::Srlz_i | Opcode::Srlz_d | Opcode::Sync_i => Action::Continue,
             Opcode::Tbit_z => {
                 assert!(pred);
                 let operands = instruction.operands();

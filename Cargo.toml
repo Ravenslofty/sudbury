@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 yaxpeax-arch = "0.0.4"
 # yaxpeax-ia64 = "0.1.2"
-yaxpeax-ia64 = { path = "../../yaxpeax-ia64" }
+yaxpeax-ia64 = { path = "../yaxpeax-ia64" }
